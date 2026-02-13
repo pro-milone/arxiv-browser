@@ -1,28 +1,36 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
+import os
 
-from .arxiv_fetch import fetch_papers_for_date
-from .smart_grouping import group_papers
+from arxiv_fetch import fetch_papers_for_date
+from smart_grouping import group_papers
 
 app = FastAPI()
 
+# Update CORS for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://your-app.vercel.app",  # Your Vercel domain
+        "http://localhost:3000",  # Local development
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.get("/")
+def root():
+    return {"message": "arXiv Research Board API"}
 
 @app.get("/papers/week")
-def papers_week():
+def papers_week(category: str = Query(default="hep-th")):
     today = datetime.utcnow().date()
     response = {}
 
     for offset in range(7):
         day = today - timedelta(days=offset)
-        papers = fetch_papers_for_date(day)
+        papers = fetch_papers_for_date(day, category=category)
         groups = group_papers(papers, min_group_size=1)
         
         # Format papers to match what frontend expects
