@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>arXiv Research Board</title>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/d3-cloud/build/d3.layout.cloud.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: #000;
+      color: #fff;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===============================
+       Animated Background Graphics
+       =============================== */
+
+    .bg-animation {
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 1s ease-out, visibility 0s 1s, z-index 0s 1s;
+      background: #000;
+    }
+
+    .bg-animation.loading {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.6s ease-in, visibility 0s 0s;
+    }
+
+    .bg-animation.loaded {
+      opacity: 0.45;
+      z-index: 0;
+      background: transparent;
+      visibility: visible;
+      transition: opacity 1s ease-out 0.5s, z-index 0s 1.5s, background 1s ease-out 0.5s;
+    }
+
+    .animated-svg {
+      width: 800px;
+      height: 800px;
+      overflow: visible;
+    }
+
+    .latitude {
+      fill: none;
+      stroke: rgb(255, 255, 255);
+      stroke-width: 0.2;
+    }
+
+    .dashed {
+      stroke-dasharray: 6 6;
+    }
+
+    .sphere-outline {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.25);
+      stroke-width: 1.2;
+    }
+
+    .loading-text {
+      position: absolute;
+      bottom: 40%;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #c7c7c7;
+      opacity: 1;
+      transition: opacity 0.5s ease-out;
+    }
+
+    .bg-animation.loaded .loading-text {
+      opacity: 0;
+    }
+
+    /* Category Selection Splash Screen */
+    .splash-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease-out, visibility 0.6s ease-out;
+    }
+
+    .splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .splash-title {
+      font-size: 2.5rem;
+      font-weight: 200;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      animation: fadeInUp 0.8s ease-out;
+    }
+
+    .splash-subtitle {
+      font-size: 0.85rem;
+      color: #666;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 4rem;
+      animation: fadeInUp 0.8s ease-out 0.2s backwards;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1px;
+      max-width: 1200px;
+      background: #111;
+      border: 1px solid #111;
+      animation: fadeIn 1s ease-out 0.4s backwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .category-option {
+      background: #000;
+      padding: 2.5rem 2rem;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .category-option::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .category-option:hover::before {
+      opacity: 0.03;
+    }
+
+    .category-option:hover {
+      transform: scale(1.02);
+    }
+
+    .category-name {
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      font-weight: 400;
+      position: relative;
+      z-index: 1;
+    }
+
+    .category-code {
+      font-size: 0.65rem;
+      color: #666;
+      margin-top: 0.5rem;
+      letter-spacing: 0.1em;
+      font-weight: 300;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Main App */
+    .main-app {
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.6s ease-in, visibility 0.6s ease-in;
+    }
+
+    .main-app.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid #111;
+      padding: 1.5rem 2.5rem;
+    }
+
+    .header-content {
+      max-width: 1600px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-right: 12rem; /* Add space for reading list button */
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    header h1 {
+      font-size: 0.85rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .category-badge {
+      font-size: 0.65rem;
+      padding: 0.4rem 0.8rem;
+      border: 1px solid #333;
+      color: #666;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 300;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .category-badge:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .paper-counter {
+      font-size: 0.7rem;
+      color: #666;
+      letter-spacing: 0.1em;
+    }
+
+    #tabs {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .tab {
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      color: #666;
+      transition: all 0.3s;
+      user-select: none;
+      position: relative;
+      padding-bottom: 0.3rem;
+    }
+
+    .tab:hover {
+      color: #999;
+    }
+
+    .tab.active {
+      color: #fff;
+    }
+
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: #fff;
+      animation: expandWidth 0.3s ease-out;
+    }
+
+    @keyframes expandWidth {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+
+    /* Reading List Button */
+    .reading-list-btn {
+      position: fixed;
+      top: 1.5rem;
+      right: 2.5rem;
+      background: transparent;
+      border: 1px solid #333;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.3s;
+      z-index: 101;
+      font-weight: 300;
+    }
+
+    .reading-list-btn:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .reading-list-btn.has-items {
+      color: #fff;
+      border-color: #fff;
+    }
+
+    .reading-list-count {
+      margin-left: 0.5rem;
+      opacity: 0.6;
+    }
+
+    /* Reading List Sidebar */
+    .reading-list-panel {
+      position: fixed;
+      top: 0;
+      right: -500px;
+      width: 500px;
+      height: 100vh;
+      background: #000;
+      border-left: 1px solid #222;
+      z-index: 1002;
+      transition: right 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .reading-list-panel.open {
+      right: 0;
+    }
+
+    .reading-list-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .reading-list-panel::-webkit-scrollbar-track {
+      background: #000;
+    }
+
+    .reading-list-panel::-webkit-scrollbar-thumb {
+      background: #333;
+    }
+
+    .reading-list-header {
+      padding: 2rem;
+      border-bottom: 1px solid #111;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      background: #000;
+      z-index: 10;
+    }
+
+    .reading-list-header h2 {
+      font-size: 0.85rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .reading-list-close {
+      background: transparent;
+      border: 1px solid #333;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      color: #666;
+      transition: all 0.3s;
+      font-weight: 300;
+    }
+
+    .reading-list-close:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .reading-list-content {
+      padding: 2rem;
+    }
+
+    .reading-list-item {
+      border: 1px solid #111;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      position: relative;
+      transition: border-color 0.3s;
+    }
+
+    .reading-list-item:hover {
+      border-color: #222;
+    }
+
+    .reading-list-item-title {
+      font-size: 0.85rem;
+      font-weight: 300;
+      line-height: 1.5;
+      margin-bottom: 0.8rem;
+      padding-right: 2rem;
+    }
+
+    .reading-list-item-title a {
+      color: #fff;
+      text-decoration: none;
+      transition: opacity 0.3s;
+    }
+
+    .reading-list-item-title a:hover {
+      opacity: 0.6;
+    }
+
+    .reading-list-item-authors {
+      font-size: 0.7rem;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    .reading-list-item-remove {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: transparent;
+      border: 1px solid #222;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: #666;
+      transition: all 0.3s;
+      font-weight: 300;
+    }
+
+    .reading-list-item-remove:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .reading-list-empty {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: #666;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      font-weight: 300;
+      line-height: 1.8;
+    }
+
+    #stage {
+      margin-top: 80px;
+      padding: 3rem 2.5rem;
+      max-width: 1600px;
+      margin-left: auto;
+      margin-right: auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .stats {
+      text-align: center;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      color: #666;
+      margin-bottom: 3rem;
+      text-transform: uppercase;
+    }
+
+    #cloud-layer {
+      min-height: 600px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    svg {
+      display: block;
+      margin: auto;
+    }
+
+    .word {
+      cursor: pointer;
+      fill: #fff;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      font-weight: 300;
+      letter-spacing: 0.02em;
+      transform-origin: center;
+    }
+
+    .word:hover {
+      opacity: 0.7;
+    }
+
+    #papers-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1000;
+      overflow: auto;
+    }
+
+    #papers-layer::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    #papers-layer::-webkit-scrollbar-track {
+      background: #000;
+    }
+
+    #papers-layer::-webkit-scrollbar-thumb {
+      background: #222;
+      border-radius: 4px;
+    }
+
+    #papers-layer::-webkit-scrollbar-thumb:hover {
+      background: #333;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      backdrop-filter: blur(12px);
+      z-index: 999;
+      pointer-events: auto;
+      animation: fadeIn 0.5s ease-out;
+    }
+
+    .paper {
+      position: absolute;
+      width: 380px;
+      background: #000;
+      border: 1px solid #222;
+      padding: 2rem;
+      pointer-events: auto;
+      animation: paperSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+      z-index: 1001;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .paper:hover {
+      border-color: #333;
+      z-index: 1100;
+      transform: scale(1.02);
+    }
+
+    .paper.expanded {
+      z-index: 1100;
+    }
+
+    @keyframes paperSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(40px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .paper-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .pin-btn {
+      position: absolute;
+      top: -1rem;
+      right: -1rem;
+      background: #000;
+      border: 1px solid #222;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      font-size: 1rem;
+      color: #666;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .pin-btn:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .pin-btn.pinned {
+      background: #fff;
+      border-color: #fff;
+      color: #000;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: 1px solid #222;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      color: #666;
+      transition: all 0.3s;
+      flex-shrink: 0;
+      font-weight: 300;
+    }
+
+    .close-btn:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .paper a {
+      text-decoration: none;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 300;
+      line-height: 1.6;
+      display: block;
+      transition: opacity 0.3s;
+      letter-spacing: 0.01em;
+    }
+
+    .paper a:hover {
+      opacity: 0.6;
+    }
+
+    .categories {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .category-tag {
+      font-size: 0.6rem;
+      padding: 0.3rem 0.6rem;
+      border: 1px solid #222;
+      color: #666;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 300;
+    }
+
+    .category-tag.primary {
+      border-color: #444;
+      color: #fff;
+    }
+
+    .authors {
+      font-size: 0.75rem;
+      color: #666;
+      margin-top: 1rem;
+      line-height: 1.6;
+      font-weight: 300;
+    }
+    
+    .abstract {
+      display: none;
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: #999;
+      line-height: 1.7;
+      max-height: 250px;
+      overflow-y: auto;
+      font-weight: 300;
+    }
+
+    .abstract::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .abstract::-webkit-scrollbar-track {
+      background: #0a0a0a;
+    }
+
+    .abstract::-webkit-scrollbar-thumb {
+      background: #222;
+    }
+
+    .abstract-toggle {
+      margin-top: 1.5rem;
+      font-size: 0.65rem;
+      background: transparent;
+      border: 1px solid #222;
+      color: #666;
+      cursor: pointer;
+      padding: 0.6rem 1.2rem;
+      font-weight: 300;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: all 0.3s;
+    }
+
+    .abstract-toggle:hover {
+      border-color: #666;
+      color: #fff;
+    }
+
+    .empty-message {
+      text-align: center;
+      padding: 4rem;
+      color: #666;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      font-weight: 300;
+    }
+
+  </style>
+</head>
+
+<body>
+  <!-- Animated Background -->
+<div class="bg-animation" id="bg-animation">
+  <svg class="animated-svg" viewBox="0 0 600 600">
+    <g id="sphere-group"></g>
+  </svg>
+  <div class="loading-text">Loading Papers</div>
+</div>
+
+
+  <!-- Category Selection Splash -->
+  <div class="splash-screen" id="splash-screen">
+    <h1 class="splash-title">arXiv</h1>
+    <p class="splash-subtitle">Select Research Category</p>
+    <div class="category-grid">
+      <div class="category-option" data-category="hep-th">
+        <div class="category-name">High Energy Physics - Theory</div>
+        <div class="category-code">hep-th</div>
+      </div>
+      <div class="category-option" data-category="quant-ph">
+        <div class="category-name">Quantum Physics</div>
+        <div class="category-code">quant-ph</div>
+      </div>
+      <div class="category-option" data-category="cond-mat">
+        <div class="category-name">Condensed Matter</div>
+        <div class="category-code">cond-mat</div>
+      </div>
+      <div class="category-option" data-category="gr-qc">
+        <div class="category-name">General Relativity</div>
+        <div class="category-code">gr-qc</div>
+      </div>
+      <div class="category-option" data-category="astro-ph">
+        <div class="category-name">Astrophysics</div>
+        <div class="category-code">astro-ph</div>
+      </div>
+      <div class="category-option" data-category="math-ph">
+        <div class="category-name">Mathematical Physics</div>
+        <div class="category-code">math-ph</div>
+      </div>
+      <div class="category-option" data-category="hep-ph">
+        <div class="category-name">High Energy Physics - Phenomenology</div>
+        <div class="category-code">hep-ph</div>
+      </div>
+      <div class="category-option" data-category="nucl-th">
+        <div class="category-name">Nuclear Theory</div>
+        <div class="category-code">nucl-th</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div class="main-app" id="main-app">
+    <header>
+      <div class="header-content">
+        <div class="header-left">
+          <h1>Daily arXiv Explorer</h1>
+          <div class="category-badge" id="current-category-badge"></div>
+          <span id="paper-counter" class="paper-counter"></span>
+        </div>
+        <div id="tabs"></div>
+      </div>
+    </header>
+
+    <button class="reading-list-btn" id="reading-list-toggle">
+      Reading List <span class="reading-list-count" id="reading-list-count"></span>
+    </button>
+
+    <div class="reading-list-panel" id="reading-list-panel">
+      <div class="reading-list-header">
+        <h2>Reading List</h2>
+        <button class="reading-list-close" id="reading-list-close">×</button>
+      </div>
+      <div class="reading-list-content" id="reading-list-content"></div>
+    </div>
+
+    <div id="stage">
+      <div class="stats" id="stats-display"></div>
+      <div id="cloud-layer"></div>
+    </div>
+    
+    <div id="papers-layer"></div>
+  </div>
+
+  <script>
+    // Global state
+    const tabsEl = document.getElementById("tabs");
+    const stage = document.getElementById("stage");
+    const cloudLayer = document.getElementById("cloud-layer");
+    const papersLayer = document.getElementById("papers-layer");
+    const paperCounterEl = document.getElementById("paper-counter");
+    const statsDisplay = document.getElementById("stats-display");
+    const readingListToggle = document.getElementById("reading-list-toggle");
+    const readingListPanel = document.getElementById("reading-list-panel");
+    const readingListClose = document.getElementById("reading-list-close");
+    const readingListContent = document.getElementById("reading-list-content");
+    const readingListCountEl = document.getElementById("reading-list-count");
+    const splashScreen = document.getElementById("splash-screen");
+    const mainApp = document.getElementById("main-app");
+    const currentCategoryBadge = document.getElementById("current-category-badge");
+    const bgAnimation = document.getElementById("bg-animation");
+
+    let weekData = {};
+    let activeDay = null;
+    let readingList = [];
+    let selectedCategory = null;
+
+    // Category selection
+    document.querySelectorAll('.category-option').forEach(option => {
+      option.addEventListener('click', () => {
+        selectedCategory = option.dataset.category;
+        currentCategoryBadge.textContent = selectedCategory;
+        
+        // Start loading animation
+        bgAnimation.classList.add('loading');
+        
+        splashScreen.classList.add('hidden');
+        setTimeout(() => {
+          mainApp.classList.add('visible');
+          load();
+        }, 600);
+      });
+    });
+
+    // Reading list functions
+    function loadReadingList() {
+      const saved = localStorage.getItem('arxiv-reading-list');
+      if (saved) {
+        readingList = JSON.parse(saved);
+        updateReadingListUI();
+      }
+    }
+
+    function saveReadingList() {
+      localStorage.setItem('arxiv-reading-list', JSON.stringify(readingList));
+      updateReadingListUI();
+    }
+
+    function isPinned(paperId) {
+      return readingList.some(p => p.id === paperId);
+    }
+
+    function addToReadingList(paper) {
+      if (!isPinned(paper.id)) {
+        readingList.push(paper);
+        saveReadingList();
+      }
+    }
+
+    function removeFromReadingList(paperId) {
+      readingList = readingList.filter(p => p.id !== paperId);
+      saveReadingList();
+    }
+
+    function updateReadingListUI() {
+      if (readingList.length === 0) {
+        readingListContent.innerHTML = '<div class="reading-list-empty">No papers in your reading list yet<br><br>Click the ★ icon on any paper to save it</div>';
+        readingListCountEl.textContent = '';
+        readingListToggle.classList.remove('has-items');
+      } else {
+        readingListCountEl.textContent = `(${readingList.length})`;
+        readingListToggle.classList.add('has-items');
+        
+        readingListContent.innerHTML = readingList.map(paper => `
+          <div class="reading-list-item">
+            <div class="reading-list-item-title">
+              <a href="${paper.link || paper.url || paper.id}" target="_blank">${paper.title}</a>
+            </div>
+            <div class="reading-list-item-authors">
+              ${paper.authors.slice(0, 3).join(", ")}${paper.authors.length > 3 ? ' et al.' : ''}
+            </div>
+            <button class="reading-list-item-remove" onclick="removeFromReadingList('${paper.id}')">×</button>
+          </div>
+        `).join('');
+      }
+    }
+
+    readingListToggle.addEventListener('click', () => {
+      readingListPanel.classList.add('open');
+    });
+
+    readingListClose.addEventListener('click', () => {
+      readingListPanel.classList.remove('open');
+    });
+
+    function clearPapers() {
+      papersLayer.innerHTML = "";
+      papersLayer.style.pointerEvents = "none";
+    }
+
+    function normalizePaper(p) {
+      return {
+        ...p,
+        link: p.link || p.url || p.id,
+        abstract: p.abstract || p.summary || "No abstract available.",
+        title: p.title || "Untitled",
+        authors: p.authors || []
+      };
+    }
+
+    function showPapers(papers, groupLabel) {
+      clearPapers();
+
+      const overlay = document.createElement("div");
+      overlay.className = "overlay";
+      overlay.onclick = () => clearPapers();
+      papersLayer.appendChild(overlay);
+
+      const container = document.createElement("div");
+      container.style.position = "absolute";
+      container.style.pointerEvents = "none";
+      
+      const cardWidth = 380;
+      const cardHeight = 300;
+      const minSpacing = 40;
+      
+      const viewportWidth = window.innerWidth - 100;
+      
+      // Always use grid layout
+      const maxCols = Math.max(1, Math.floor(viewportWidth / (cardWidth + minSpacing)));
+      const cols = Math.min(maxCols, Math.ceil(Math.sqrt(papers.length * 1.5)));
+      const rows = Math.ceil(papers.length / cols);
+      
+      const containerWidth = cols * (cardWidth + minSpacing) - minSpacing;
+      const containerHeight = rows * (cardHeight + minSpacing) - minSpacing;
+      
+      const positions = papers.map((paper, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        return {
+          x: col * (cardWidth + minSpacing),
+          y: row * (cardHeight + minSpacing)
+        };
+      });
+      
+      const left = Math.max(50, (window.innerWidth - containerWidth) / 2);
+      const top = Math.max(50, (window.innerHeight - containerHeight) / 2);
+      
+      container.style.left = `${left}px`;
+      container.style.top = `${top}px`;
+      container.style.width = `${containerWidth}px`;
+      container.style.height = `${containerHeight}px`;
+
+      papers.forEach((paper, i) => {
+        const p = normalizePaper(paper);
+        const pos = positions[i];
+
+        const div = document.createElement("div");
+        div.className = "paper";
+        div.style.left = `${pos.x}px`;
+        div.style.top = `${pos.y}px`;
+        div.style.animationDelay = `${i * 0.05}s`;
+
+        const pinned = isPinned(p.id);
+
+        let categoryHTML = '';
+        if (p.categories && p.categories.length > 0) {
+          categoryHTML = '<div class="categories">';
+          p.categories.forEach((cat, idx) => {
+            const isPrimary = cat === p.primary_category;
+            categoryHTML += `<span class="category-tag ${isPrimary ? 'primary' : ''}">${cat}</span>`;
+          });
+          categoryHTML += '</div>';
+        }
+
+        div.innerHTML = `
+          <button class="pin-btn ${pinned ? 'pinned' : ''}" data-paper-id="${p.id}">
+            ${pinned ? '★' : '☆'}
+          </button>
+          <div class="paper-header">
+            <div style="flex: 1; margin-right: 1rem;">
+              <a href="${p.link}" target="_blank">${p.title}</a>
+              ${categoryHTML}
+            </div>
+            <button class="close-btn" onclick="event.stopPropagation(); clearPapers();">×</button>
+          </div>
+          <div class="authors">${p.authors.slice(0, 3).join(", ")}${p.authors.length > 3 ? ' et al.' : ''}</div>
+          <button class="abstract-toggle">Abstract</button>
+          <div class="abstract">${p.abstract}</div>
+        `;
+
+        const pinBtn = div.querySelector(".pin-btn");
+        pinBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isPinned(p.id)) {
+            removeFromReadingList(p.id);
+            pinBtn.classList.remove('pinned');
+            pinBtn.textContent = '☆';
+          } else {
+            addToReadingList(p);
+            pinBtn.classList.add('pinned');
+            pinBtn.textContent = '★';
+          }
+        });
+
+        const btn = div.querySelector(".abstract-toggle");
+        const abs = div.querySelector(".abstract");
+
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const open = abs.style.display === "block";
+          abs.style.display = open ? "none" : "block";
+          btn.textContent = open ? "Abstract" : "Close";
+          
+          // Add/remove expanded class to ensure z-index stays high
+          if (open) {
+            div.classList.remove('expanded');
+          } else {
+            div.classList.add('expanded');
+          }
+        });
+
+        div.onclick = (e) => e.stopPropagation();
+        container.appendChild(div);
+      });
+      
+      papersLayer.appendChild(container);
+      papersLayer.style.pointerEvents = "auto";
+    }
+
+    function renderCloud(groups) {
+      clearPapers();
+      cloudLayer.innerHTML = "";
+      statsDisplay.innerHTML = "";
+
+      if (!groups || groups.length === 0) {
+        cloudLayer.innerHTML = '<div class="empty-message">No papers available for this day</div>';
+        paperCounterEl.textContent = '';
+        
+        // Transition to background
+        bgAnimation.classList.remove('loading');
+        bgAnimation.classList.add('loaded');
+        return;
+      }
+
+      const totalPapers = groups.reduce((sum, g) => sum + g.papers.length, 0);
+      
+      paperCounterEl.textContent = `${totalPapers} papers`;
+      statsDisplay.textContent = `${totalPapers} papers · ${groups.length} research areas`;
+
+      const width = Math.min(1400, cloudLayer.clientWidth);
+      const height = Math.min(700, window.innerHeight - 300);
+
+      const scale = d3.scaleLinear()
+        .domain([1, d3.max(groups, g => g.papers.length)])
+        .range([14, 48]);
+
+      const words = groups.map(g => ({
+        text: g.keywords[0],
+        size: scale(g.papers.length),
+        papers: g.papers,
+        count: g.papers.length
+      }));
+
+      const svg = d3.select(cloudLayer)
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+      d3.layout.cloud()
+        .size([width, height])
+        .words(words)
+        .padding(12)
+        .rotate(() => 0)
+        .font("'Helvetica Neue', Arial, sans-serif")
+        .fontSize(d => d.size)
+        .spiral("archimedean")
+        .on("end", layoutWords => {
+          const textElements = svg.selectAll("text")
+            .data(layoutWords)
+            .enter()
+            .append("text")
+            .attr("class", "word")
+            .style("font-size", d => `${d.size}px`)
+            .style("font-weight", "300")
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .attr("transform", d => `translate(${d.x},${d.y})`)
+            .text(d => d.text)
+            .style("opacity", 0);
+
+          // Staggered fade-in
+          textElements.transition()
+            .duration(600)
+            .delay((d, i) => i * 50)
+            .style("opacity", 1)
+            .on("end", (d, i) => {
+              // After all words have faded in, transition background
+              if (i === layoutWords.length - 1) {
+                setTimeout(() => {
+                  bgAnimation.classList.remove('loading');
+                  bgAnimation.classList.add('loaded');
+                }, 300);
+              }
+            });
+
+          textElements.append("title")
+            .text(d => `${d.count} paper${d.count > 1 ? 's' : ''}`);
+
+          textElements.on("click", (_, d) => showPapers(d.papers, d.text));
+          
+          // Add smooth hover expansion
+          textElements.on("mouseenter", function(event, d) {
+            d3.select(this)
+              .transition()
+              .duration(1200)
+              .ease(d3.easeCubicOut)
+              .attr("transform", `translate(${d.x},${d.y}) scale(1.04)`)
+              .style("opacity", 0.7);
+          });
+          
+          textElements.on("mouseleave", function(event, d) {
+            d3.select(this)
+              .transition()
+              .duration(1200)
+              .ease(d3.easeCubicOut)
+              .attr("transform", `translate(${d.x},${d.y}) scale(1)`)
+              .style("opacity", 1);
+          });
+        })
+        .start();
+    }
+
+    function activateTab(day) {
+      activeDay = day;
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      const selectedTab = document.querySelector(`[data-day="${day}"]`);
+      if (selectedTab) {
+        selectedTab.classList.add("active");
+        renderCloud(weekData[day]);
+      }
+    }
+
+    async function load() {
+      try {
+        // TODO: Update this endpoint to accept category parameter
+        const res = await fetch(`http://localhost:8000/papers/week?category=${selectedCategory}`);
+        const data = await res.json();
+
+        const daysWithData = {};
+        Object.keys(data).forEach(day => {
+          if (data[day] && data[day].length > 0) {
+            daysWithData[day] = data[day];
+          }
+        });
+
+        weekData = daysWithData;
+        const days = Object.keys(weekData).sort().reverse();
+
+        if (days.length === 0) {
+          cloudLayer.innerHTML = '<div class="empty-message">No papers found for the past week</div>';
+          return;
+        }
+
+        tabsEl.innerHTML = "";
+
+        days.forEach((day, i) => {
+          const tab = document.createElement("div");
+          tab.className = "tab";
+          tab.dataset.day = day;
+          
+          const date = new Date(day + "T00:00:00");
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const dayDate = new Date(date);
+          dayDate.setHours(0, 0, 0, 0);
+          
+          if (dayDate.getTime() === today.getTime()) {
+            tab.textContent = "Today";
+          } else {
+            const weekday = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+            const monthDay = date.toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric'
+            });
+            tab.textContent = `${weekday} ${monthDay}`;
+          }
+          
+          tab.onclick = () => activateTab(day);
+          tabsEl.appendChild(tab);
+        });
+
+        activateTab(days[0]);
+        
+      } catch (error) {
+        console.error("Failed to load papers:", error);
+        cloudLayer.innerHTML = `<div class="empty-message">
+          Failed to load papers<br><br>Ensure backend is running on port 8000
+        </div>`;
+      }
+    }
+
+    // Click category badge to change category
+    currentCategoryBadge.addEventListener('click', () => {
+      mainApp.classList.remove('visible');
+      setTimeout(() => {
+        splashScreen.classList.remove('hidden');
+      }, 600);
+    });
+
+    window.clearPapers = clearPapers;
+    window.removeFromReadingList = removeFromReadingList;
+    
+    // Animate sphere breathing
+    /* =====================================
+   Analytic Latitude Animation (Exact)
+   ===================================== */
+
+function initLatitudeAnimation() {
+
+  const group = document.getElementById("sphere-group");
+
+  const WIDTH = 600;
+  const HEIGHT = 600;
+  const CX = WIDTH / 2;
+  const CY = HEIGHT / 2;
+  const SCALE = 220;
+
+  const a = 1;
+  const b = 0.46;
+
+  const sqrtTerm = Math.sqrt(1 - b);
+
+  const NUM = 20;
+  const PHI_MAX = 2;
+
+  // Sphere outline
+  const circle = document.createElementNS("http://www.w3.org/2000/svg","circle");
+  circle.setAttribute("cx", CX);
+  circle.setAttribute("cy", CY);
+  circle.setAttribute("r", SCALE);
+  circle.setAttribute("class","sphere-outline");
+  group.appendChild(circle);
+
+  const ellipses = [];
+
+  for(let i=0;i<NUM;i++){
+
+      const phi = PHI_MAX * i/(NUM-1);
+
+      const e = document.createElementNS("http://www.w3.org/2000/svg","ellipse");
+      e.setAttribute("class","latitude");
+      if(i%2===1) e.classList.add("dashed");
+
+      group.appendChild(e);
+
+      ellipses.push({element:e,phi});
+  }
+
+  let t = 1000;
+
+  function animate(){
+
+      t -= 0.001;
+
+      ellipses.forEach(obj=>{
+
+          const phi = obj.phi;
+
+          let y0 = ( (t/2 + sqrtTerm*phi) % (2*sqrtTerm) ) - sqrtTerm;
+
+          const rhs = 1 + (y0*y0)/(b-1);
+
+          if(rhs <= 0){
+              obj.element.style.opacity = 0;
+              return;
+          }
+
+          const rx = Math.sqrt(a*rhs);
+          const ry = Math.sqrt(b*rhs);
+
+          obj.element.setAttribute("cx", CX);
+          obj.element.setAttribute("cy", CY - y0*SCALE);
+          obj.element.setAttribute("rx", rx*SCALE);
+          obj.element.setAttribute("ry", ry*SCALE);
+
+          obj.element.style.opacity = 1;
+      });
+
+      requestAnimationFrame(animate);
+  }
+
+  animate();
+}
+
+initLatitudeAnimation();
+
+    
+    loadReadingList();
+  </script>
+</body>
+</html>
